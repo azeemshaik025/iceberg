@@ -1,0 +1,8 @@
+refs/
+node_modules/
+target/
+dist/
+.snfoundry_cache/
+devnet-deployment.json
+.DS_Store
+*.log
