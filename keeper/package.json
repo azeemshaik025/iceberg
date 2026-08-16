@@ -1,0 +1,13 @@
+{
+  "name": "iceberg-keeper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node keeper.js",
+    "dry-run": "node keeper.js --dry-run"
+  },
+  "dependencies": {
+    "starknet": "^10.4.0"
+  }
+}
