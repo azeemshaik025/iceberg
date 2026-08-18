@@ -1,3 +1,30 @@
+//! Iceberg: scheduled, batched token swaps driven by the STRK20 privacy pool.
+//!
+//! A `Plan` splits `chunk_amount * num_chunks` of `in_token` into one chunk per
+//! interval, active over `[start_interval, end_interval]`. A permissionless
+//! keeper calls `execute_batch` once per matured interval; it swaps the sum of
+//! every active plan's `chunk_amount` in a single trade, so no on-chain event
+//! ever reveals an individual plan's size or owner — only the batch total.
+//!
+//! ## O(1) accounting via a cumulative price index
+//!
+//! Naively, computing what a plan has earned would require iterating every
+//! interval it has lived through. Instead, each executed interval writes one
+//! number, `index_after[interval]`: the WAD-scaled cumulative out-per-in rate
+//! up to and including that interval
+//! (`index_after[i] = index_after[i-1] + out_received * WAD / in_swapped`).
+//! A plan's accrual is then a single subtraction, independent of how many
+//! intervals it has matured over:
+//!
+//!   accrued = chunk_amount * (index_after[matured_end] - index_after[start - 1]) / WAD
+//!
+//! The same trick applies to scheduling which chunks are "active" in a given
+//! interval: rather than iterating plans, `rate_start[interval]` and
+//! `rate_expiry[interval]` record how much chunk volume joins/leaves at that
+//! interval, and `execute_batch` folds them into one running `chunk_rate`.
+//! Both `create_plan` and `execute_batch` are O(1) regardless of how many
+//! other plans exist.
+
 use starknet::ContractAddress;
 
 /// Mirrors `privacy::objects::OpenNoteDeposit` from starkware-libs/starknet-privacy.
