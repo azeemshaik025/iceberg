@@ -1,10 +1,17 @@
 //! Iceberg: scheduled, batched token swaps driven by the STRK20 privacy pool.
 //!
 //! A `Plan` splits `chunk_amount * num_chunks` of `in_token` into one chunk per
-//! interval, active over `[start_interval, end_interval]`. A permissionless
-//! keeper calls `execute_batch` once per matured interval; it swaps the sum of
-//! every active plan's `chunk_amount` in a single trade, so no on-chain event
-//! ever reveals an individual plan's size or owner — only the batch total.
+//! interval, active over `[start_interval, end_interval]`. A single, fixed
+//! `keeper` address calls `execute_batch` once per matured interval; it swaps
+//! the sum of every active plan's `chunk_amount` in a single trade, so no
+//! on-chain event ever reveals an individual plan's size or owner — only the
+//! batch total.
+//!
+//! Execution is deliberately not permissionless: `execute_batch`'s `min_out`
+//! is caller-supplied with no on-chain price check, so an unrestricted caller
+//! could set it to zero and sandwich the batch. The tradeoff is liveness, not
+//! funds — `cancel()` always works regardless of keeper uptime — but `keeper`
+//! cannot be rotated post-deployment; losing its key means redeploying.
 //!
 //! ## O(1) accounting via a cumulative price index
 //!

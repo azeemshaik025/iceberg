@@ -23,8 +23,8 @@ One Cairo contract, `IcebergHelper`, single `privacy_invoke` entrypoint multiple
 - `Claim { secret, note_id }` — recompute commitment, compute accrued `out_token` via interval index (below), approve pool, return `[OpenNoteDeposit { note_id, out_token, accrued }]`. Partial claims allowed; claimed amount tracked.
 - `Cancel { secret, note_id }` — refund unswapped `in_token` remainder as an open note; plan closed.
 
-**Public (keeper, permissionless):**
-- `execute_batch()` — once per interval: sum due chunks across active plans, swap aggregate on Ekubo router (min-out slippage guard from caller), record interval's price index. Callable by anyone; contract enforces interval spacing; keeper = cron with random jitter.
+**Keeper-gated, not permissionless:**
+- `execute_batch()` — once per interval: sum due chunks across active plans, swap aggregate on Ekubo router (min-out slippage guard from caller), record interval's price index. Restricted to the single `keeper` address set at construction; contract enforces interval spacing; keeper = cron with random jitter. Deliberately not open to any caller: `min_out` is caller-supplied with no on-chain price check, so an unrestricted caller could set it to zero and sandwich the batch. Tradeoff is liveness, not funds — `cancel()` always works regardless of keeper uptime — but `keeper` can't be rotated post-deployment; losing its key means redeploying.
 
 **Accounting — O(1) claims via prefix sums:** per interval store cumulative `Σ (out/in)` index. A plan holds `start_interval`, `chunk_amount`, `n_chunks`; accrued out = `chunk_amount × (index[last_matured] − index[start−1])`. No per-plan iteration in `execute_batch` beyond aggregating due amounts (tracked with an active-amount schedule: `total_active += chunk` at start, scheduled `−= chunk` at expiry — O(1) per plan via a per-interval expiry map).
 
