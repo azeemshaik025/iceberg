@@ -9,3 +9,4 @@ devnet-deployment.json
 .env
 .env.*
 !.env.example
+design/
