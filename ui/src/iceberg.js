@@ -51,6 +51,13 @@ export async function fetchPlan(provider, address, commitment) {
 }
 
 /// The public feed: every BatchExecuted event — this is ALL an observer learns.
+///
+/// Known limitation: this re-scans from block 0 on every call (App.jsx polls
+/// it every 10s), which is fine against a fresh devnet but will get slow and
+/// eventually rate-limited once run against real mainnet history. Fixing it
+/// properly means caching the last-seen block/continuation_token across
+/// calls and only fetching new events — not done here since it changes this
+/// function's shape (and its one caller) rather than just flagging the gap.
 export async function fetchBatches(provider, address) {
   const batchKey = hash.getSelectorFromName("BatchExecuted");
   const events = [];
