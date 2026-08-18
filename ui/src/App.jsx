@@ -306,7 +306,7 @@ export default function App() {
 
   return (
     <div className="page">
-      <header className="header">
+      <header className="header rise">
         <div className="header-left">
           <div className="title-row">
             <h1 className="title serif">Iceberg</h1>
@@ -330,7 +330,7 @@ export default function App() {
         </div>
       </header>
 
-      <div className="metrics">
+      <div className="metrics rise rise-1">
         <div className="metric">
           <span className="lbl">current interval</span>
           <span className="metric-value">{status ? String(status.currentInterval) : "—"}</span>
@@ -357,7 +357,7 @@ export default function App() {
 
       {error && <div className="error">{error}</div>}
 
-      <section className="section">
+      <section className="section rise rise-2">
         <div className="section-head">
           <div className="section-head-left">
             <span className="lbl lbl-wide">above the waterline</span>
@@ -430,7 +430,7 @@ export default function App() {
       </section>
 
       {featured && (
-        <section className="section-tight">
+        <section className="section-tight rise rise-3">
           <div className="card assembly">
             <div className="assembly-head">
               <span className="lbl lbl-wide">
