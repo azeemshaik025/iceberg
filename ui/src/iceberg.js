@@ -52,13 +52,13 @@ export async function fetchPlan(provider, address, commitment) {
 
 /// The public feed: every BatchExecuted event — this is ALL an observer learns.
 ///
-/// Known limitation: this re-scans from block 0 on every call (App.jsx polls
-/// it every 10s), which is fine against a fresh devnet but will get slow and
-/// eventually rate-limited once run against real mainnet history. Fixing it
-/// properly means caching the last-seen block/continuation_token across
-/// calls and only fetching new events — not done here since it changes this
-/// function's shape (and its one caller) rather than just flagging the gap.
-export async function fetchBatches(provider, address) {
+/// Incremental: takes the block to resume from (0 for a first call) and
+/// returns both the newly-seen batches and the block to pass in next time,
+/// so a caller polling this on an interval never re-scans blocks it has
+/// already fetched. Safe to call repeatedly with the same fromBlock (e.g.
+/// nothing new happened) — nextFromBlock only advances when events are
+/// actually found.
+export async function fetchBatches(provider, address, fromBlock = 0) {
   const batchKey = hash.getSelectorFromName("BatchExecuted");
   const events = [];
   let continuationToken;
@@ -66,7 +66,7 @@ export async function fetchBatches(provider, address) {
     const page = await provider.getEvents({
       address,
       keys: [[batchKey]],
-      from_block: { block_number: 0 },
+      from_block: { block_number: fromBlock },
       to_block: "latest",
       chunk_size: 100,
       continuation_token: continuationToken,
@@ -74,10 +74,16 @@ export async function fetchBatches(provider, address) {
     events.push(...page.events);
     continuationToken = page.continuation_token;
   } while (continuationToken);
-  return events.map((event) => ({
+  const newBatches = events.map((event) => ({
     interval: BigInt(event.keys[1]),
     inAmount: BigInt(event.data[0]),
     outAmount: BigInt(event.data[1]),
     txHash: event.transaction_hash,
   }));
+  const maxBlock = events.reduce(
+    (max, event) => Math.max(max, event.block_number ?? fromBlock),
+    fromBlock,
+  );
+  // +1 so the block we just fully consumed is never re-fetched.
+  return { newBatches, nextFromBlock: events.length > 0 ? maxBlock + 1 : fromBlock };
 }

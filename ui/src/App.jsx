@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { cancelDemo, claimDemo, createPlanDemo, isDevnetRpc } from "./devnet-writer.js";
 import { fetchBatches, fetchPlan, fetchStatus, makeProvider, planCommitment } from "./iceberg.js";
@@ -46,15 +46,29 @@ export default function App() {
     }
   }, [secret]);
 
+  // Cursor for fetchBatches' incremental scan: which block to resume from.
+  // Reset (below) only when provider/address change — not on every render,
+  // and not when just the plan secret changes — so polling the same
+  // contract never re-scans blocks it has already fetched.
+  const nextFromBlockRef = useRef(0);
+
+  useEffect(() => {
+    nextFromBlockRef.current = 0;
+    setBatches([]);
+  }, [provider, address]);
+
   const refresh = useCallback(async () => {
     if (!address) return;
     try {
-      const [nextStatus, nextBatches] = await Promise.all([
+      const [nextStatus, { newBatches, nextFromBlock }] = await Promise.all([
         fetchStatus(provider, address),
-        fetchBatches(provider, address),
+        fetchBatches(provider, address, nextFromBlockRef.current),
       ]);
+      nextFromBlockRef.current = nextFromBlock;
       setStatus(nextStatus);
-      setBatches(nextBatches.reverse());
+      if (newBatches.length > 0) {
+        setBatches((prev) => [...newBatches.reverse(), ...prev]);
+      }
       setPlan(commitment ? await fetchPlan(provider, address, commitment) : null);
       setError("");
     } catch (refreshError) {
