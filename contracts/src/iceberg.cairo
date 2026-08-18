@@ -365,14 +365,14 @@ pub mod Iceberg {
             let mut plan = self.plans.read(commitment);
             assert(plan.chunk_amount.is_non_zero(), errors::UNKNOWN_PLAN);
 
-            let executed_chunk_count = self.executed_chunks_of(plan);
+            let next_interval = self.next_interval.read();
+            let executed_chunk_count = self.executed_chunks_of(next_interval, plan);
             let total_chunk_count: u64 = plan.end_interval - plan.start_interval + 1;
             let unswapped_chunk_count = total_chunk_count - executed_chunk_count;
             assert(unswapped_chunk_count > 0, errors::NOTHING_TO_REFUND);
 
             // Deschedule the plan's future chunks. rate_start[start] is folded into
             // chunk_rate when interval `start` executes, so "joined" ⟺ next > start.
-            let next_interval = self.next_interval.read();
             if next_interval <= plan.start_interval {
                 self
                     .rate_start
@@ -409,8 +409,10 @@ pub mod Iceberg {
         /// router's return value (MockSwapExecutor pattern from starknet-privacy).
         fn swap(ref self: ContractState, in_amount: u128) -> u128 {
             let self_address = get_contract_address();
-            let in_erc20 = IERC20Dispatcher { contract_address: self.in_token.read() };
-            let out_erc20 = IERC20Dispatcher { contract_address: self.out_token.read() };
+            let in_token = self.in_token.read();
+            let out_token = self.out_token.read();
+            let in_erc20 = IERC20Dispatcher { contract_address: in_token };
+            let out_erc20 = IERC20Dispatcher { contract_address: out_token };
             let router = self.swap_router.read();
 
             in_erc20.approve(router, in_amount.into());
@@ -418,10 +420,7 @@ pub mod Iceberg {
             call_contract_syscall(
                 address: router,
                 entry_point_selector: self.swap_selector.read(),
-                calldata: [
-                    self.in_token.read().into(), self.out_token.read().into(), in_amount.into(), 0,
-                ]
-                    .span(),
+                calldata: [in_token.into(), out_token.into(), in_amount.into(), 0].span(),
             )
                 .unwrap_syscall();
             let balance_after = out_erc20.balance_of(self_address);
@@ -436,8 +435,9 @@ pub mod Iceberg {
         }
 
         /// Number of the plan's intervals already executed by batches.
-        fn executed_chunks_of(self: @ContractState, plan: Plan) -> u64 {
-            let next_interval = self.next_interval.read();
+        /// Takes next_interval rather than reading it, so callers that also
+        /// need it for their own logic (cancel) don't pay for the SLOAD twice.
+        fn executed_chunks_of(self: @ContractState, next_interval: u64, plan: Plan) -> u64 {
             if next_interval <= plan.start_interval {
                 return 0;
             }
