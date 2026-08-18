@@ -12,6 +12,19 @@ pub trait IMockERC20<T> {
     fn mint(ref self: T, recipient: ContractAddress, amount: u256);
 }
 
+/// Ekubo's own `ekubo::interfaces::erc20::IERC20` uses camelCase
+/// (`balanceOf`/`transferFrom`) where `IMockERC20` above uses snake_case;
+/// `transfer`/`approve`/`allowance` already match by name across both. This
+/// adds just the two that don't, so MockERC20 also works as the token
+/// `ekubo::components::clear`'s embeddable `clear()` calls in adapter tests.
+#[starknet::interface]
+pub trait IERC20CamelCompat<T> {
+    fn balanceOf(self: @T, account: ContractAddress) -> u256;
+    fn transferFrom(
+        ref self: T, sender: ContractAddress, recipient: ContractAddress, amount: u256,
+    ) -> bool;
+}
+
 #[starknet::contract]
 pub mod MockERC20 {
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
@@ -69,6 +82,30 @@ pub mod MockERC20 {
 
         fn mint(ref self: ContractState, recipient: ContractAddress, amount: u256) {
             self.balances.write(recipient, self.balances.read(recipient) + amount);
+        }
+    }
+
+    #[abi(embed_v0)]
+    pub impl MockERC20CamelCompatImpl of super::IERC20CamelCompat<ContractState> {
+        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
+            self.balances.read(account)
+        }
+
+        fn transferFrom(
+            ref self: ContractState,
+            sender: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256,
+        ) -> bool {
+            let spender = get_caller_address();
+            let approved_amount = self.allowances.read((sender, spender));
+            assert(approved_amount >= amount, 'INSUFFICIENT_ALLOWANCE');
+            self.allowances.write((sender, spender), approved_amount - amount);
+            let sender_balance = self.balances.read(sender);
+            assert(sender_balance >= amount, 'INSUFFICIENT_BALANCE');
+            self.balances.write(sender, sender_balance - amount);
+            self.balances.write(recipient, self.balances.read(recipient) + amount);
+            true
         }
     }
 }
