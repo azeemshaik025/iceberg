@@ -56,20 +56,28 @@ Full writeup: [Iceberg Pre-Mainnet Review](https://claude.ai/code/artifact/78365
 vulnerability checklist, cross-checked with a fresh `snforge test` run (21/21 pass). **No
 fund-loss-critical findings.**
 
+**Correction (same day):** the original writeup here suggested removing the `ONLY_KEEPER` gate on
+`execute_batch` as a costless liveness improvement. That was wrong — `min_out` is caller-supplied
+with no on-chain price check, so an unrestricted caller could set `min_out=0` and sandwich the
+batch for profit. The gate is load-bearing, not an oversight. Fixed below.
+
 Two things to decide on before deploying:
 
 1. `execute_batch` is gated to the single `keeper` address (`iceberg.cairo:266`) — SPEC.md and the
-   module docs say permissionless, the code doesn't. No fund risk (`cancel()` always works
-   regardless of keeper liveness), but if the keeper dies every active plan silently stalls.
-   Either fix the docs to match reality, or actually remove the gate — the function has no
-   caller-benefit to exploit, so opening it costs nothing in safety.
+   module docs said "permissionless," which doesn't match the code and, per the correction above,
+   shouldn't: the code is right, the docs were wrong. **Fix**: correct the docs to describe the
+   keeper-gated design as intentional (why: `min_out` trust), not aspirational. No fund risk
+   either way — `cancel()` always works regardless of keeper liveness — but if the keeper dies,
+   every active plan silently stalls until it's restored.
 2. No admin functions anywhere — `keeper`/`pool_address`/`swap_router`/tokens are permanently
    fixed at construction. If the keeper key is ever lost, there's no rotation path short of a full
-   redeploy. Probably fine as a v1 tradeoff, but it means the keeper key needs real custody from
-   day one, not a throwaway dev key.
+   redeploy. Deliberately **not** adding a rotation function this close to deploying — new admin
+   surface under time pressure is a worse trade than the liveness risk it would fix, given
+   `cancel()` already bounds the downside to "degraded service," never "lost funds." Means the
+   keeper key needs real custody from day one, not a throwaway dev key.
 
 Checklist for the actual deploy tx:
-- [ ] Reconcile SPEC.md's "permissionless" wording against the keeper-gated code (or remove the gate)
+- [x] Fix SPEC.md's "permissionless" wording to match the (intentionally) keeper-gated code — see below
 - [ ] Confirm the deployed keeper's private key is a real, permanent credential, not a dev key
 - [ ] Confirm `MIN_OUT_SOURCE=avnu` in the mainnet keeper env, never `none`
 - [ ] Re-run `snforge test` (incl. the fork test) immediately before deploying
