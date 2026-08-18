@@ -51,27 +51,36 @@ export default function App() {
   // and not when just the plan secret changes — so polling the same
   // contract never re-scans blocks it has already fetched.
   const nextFromBlockRef = useRef(0);
+  // Bumped on every reset. A refresh that started before the bump is reading a
+  // different contract, so it must not commit: prepending its batches would mix
+  // two contracts' feeds, and its cursor would skip blocks on the new one.
+  const feedGenerationRef = useRef(0);
 
   useEffect(() => {
+    feedGenerationRef.current += 1;
     nextFromBlockRef.current = 0;
     setBatches([]);
   }, [provider, address]);
 
   const refresh = useCallback(async () => {
     if (!address) return;
+    const generation = feedGenerationRef.current;
     try {
       const [nextStatus, { newBatches, nextFromBlock }] = await Promise.all([
         fetchStatus(provider, address),
         fetchBatches(provider, address, nextFromBlockRef.current),
       ]);
+      const nextPlan = commitment ? await fetchPlan(provider, address, commitment) : null;
+      if (generation !== feedGenerationRef.current) return;
       nextFromBlockRef.current = nextFromBlock;
       setStatus(nextStatus);
       if (newBatches.length > 0) {
         setBatches((prev) => [...newBatches.reverse(), ...prev]);
       }
-      setPlan(commitment ? await fetchPlan(provider, address, commitment) : null);
+      setPlan(nextPlan);
       setError("");
     } catch (refreshError) {
+      if (generation !== feedGenerationRef.current) return;
       setError(String(refreshError.message ?? refreshError));
     }
   }, [provider, address, commitment]);
