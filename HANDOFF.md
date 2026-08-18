@@ -49,6 +49,33 @@ cd ui && npm i && npm run dev         # paste RPC + iceberg address in the top b
    STRK. Mind the ~10-block rule: wait ~10 blocks between a private tx (or a funding
    transfer) and the next proof.
 
+### Pre-mainnet security review (2026-08-18)
+
+Full writeup: [Iceberg Pre-Mainnet Review](https://claude.ai/code/artifact/783657ca-786d-4e13-b557-25cac5bac578)
+— manual line-by-line pass on `iceberg.cairo` + `ekubo_adapter.cairo` against the Cairo/StarkNet
+vulnerability checklist, cross-checked with a fresh `snforge test` run (21/21 pass). **No
+fund-loss-critical findings.**
+
+Two things to decide on before deploying:
+
+1. `execute_batch` is gated to the single `keeper` address (`iceberg.cairo:266`) — SPEC.md and the
+   module docs say permissionless, the code doesn't. No fund risk (`cancel()` always works
+   regardless of keeper liveness), but if the keeper dies every active plan silently stalls.
+   Either fix the docs to match reality, or actually remove the gate — the function has no
+   caller-benefit to exploit, so opening it costs nothing in safety.
+2. No admin functions anywhere — `keeper`/`pool_address`/`swap_router`/tokens are permanently
+   fixed at construction. If the keeper key is ever lost, there's no rotation path short of a full
+   redeploy. Probably fine as a v1 tradeoff, but it means the keeper key needs real custody from
+   day one, not a throwaway dev key.
+
+Checklist for the actual deploy tx:
+- [ ] Reconcile SPEC.md's "permissionless" wording against the keeper-gated code (or remove the gate)
+- [ ] Confirm the deployed keeper's private key is a real, permanent credential, not a dev key
+- [ ] Confirm `MIN_OUT_SOURCE=avnu` in the mainnet keeper env, never `none`
+- [ ] Re-run `snforge test` (incl. the fork test) immediately before deploying
+- [ ] Verify constructor args against real mainnet addresses (pool, Ekubo router, ETH/USDC pool key — same ones the fork test already pins)
+- [ ] Confirm the deploy targets `Iceberg`/`EkuboAdapter` by exact class name, not a `Mock*`
+
 ### M5 — submission
 
 - Real README (architecture, honest privacy model below, run instructions) + MIT LICENSE
