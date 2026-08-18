@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  SCARB_VERSION: 2.17.0
+  SNFORGE_VERSION: 0.59.0
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/scarb
+          key: scarb-cache-${{ hashFiles('contracts/Scarb.lock') }}
+      - name: Install Cairo toolchain (pinned, same versions as local)
+        run: |
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/opt" && cd "$HOME/.local/opt"
+          curl -sL "https://github.com/software-mansion/scarb/releases/download/v${SCARB_VERSION}/scarb-v${SCARB_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
+          curl -sL "https://github.com/foundry-rs/starknet-foundry/releases/download/v${SNFORGE_VERSION}/starknet-foundry-v${SNFORGE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
+          USC_TAG=$(curl -s https://api.github.com/repos/software-mansion/universal-sierra-compiler/releases/latest | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          curl -sL "https://github.com/software-mansion/universal-sierra-compiler/releases/download/${USC_TAG}/universal-sierra-compiler-${USC_TAG}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
+          ln -sf "$HOME"/.local/opt/*/bin/* "$HOME/.local/bin/"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Build (deploy artifacts)
+        working-directory: contracts
+        run: scarb build
+      - name: Unit tests
+        working-directory: contracts
+        # test_ekubo_fork is excluded: it forks mainnet via a public RPC, which
+        # is too flaky for CI. Run `snforge test` locally for the full suite.
+        run: |
+          snforge test test_iceberg
+          snforge test test_ekubo_adapter
+
+  keeper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: keeper/package-lock.json
+      - working-directory: keeper
+        run: npm ci
+      - working-directory: keeper
+        run: npm test
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - working-directory: ui
+        run: npm ci
+      - working-directory: ui
+        run: npm run build
