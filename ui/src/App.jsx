@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { cancelDemo, claimDemo, createPlanDemo, isDevnetRpc } from "./devnet-writer.js";
 import { fetchBatches, fetchPlan, fetchStatus, makeProvider, planCommitment } from "./iceberg.js";
 
 const stored = (key, fallback) => localStorage.getItem(key) ?? fallback;
@@ -65,6 +66,41 @@ export default function App() {
     const timer = setInterval(refresh, 10_000);
     return () => clearInterval(timer);
   }, [refresh]);
+
+  const [chunkInput, setChunkInput] = useState("50");
+  const [chunksInput, setChunksInput] = useState("4");
+  const [busy, setBusy] = useState(false);
+  const [actionResult, setActionResult] = useState("");
+  const demoMode = isDevnetRpc(rpcUrl);
+
+  const runAction = async (label, action) => {
+    setBusy(true);
+    setActionResult(`${label}…`);
+    try {
+      const txHash = await action();
+      setActionResult(`${label} ✓ ${txHash.slice(0, 12)}…`);
+      await refresh();
+    } catch (actionError) {
+      setActionResult(`${label} failed: ${String(actionError.message ?? actionError)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onCreate = () =>
+    runAction("create", () =>
+      createPlanDemo({
+        rpcUrl,
+        icebergAddress: address,
+        chunkAmount: BigInt(Math.round(Number(chunkInput) * 100)) *
+          10n ** (BigInt(inDecimals) - 2n),
+        numChunks: Number(chunksInput),
+        secret,
+      }),
+    );
+  const onClaim = () => runAction("claim", () => claimDemo({ rpcUrl, icebergAddress: address, secret }));
+  const onCancel = () =>
+    runAction("cancel", () => cancelDemo({ rpcUrl, icebergAddress: address, secret }));
 
   const executedChunks = (currentPlan) => {
     if (!status || !currentPlan?.exists) return 0n;
@@ -192,6 +228,46 @@ export default function App() {
           ) : (
             commitment && <p className="empty">No plan found for this secret.</p>
           )}
+          <div className="actions">
+            <h3>Act on this plan</h3>
+            {demoMode ? (
+              <>
+                <div className="actionrow">
+                  <label>
+                    chunk
+                    <input value={chunkInput} onChange={(event) => setChunkInput(event.target.value)} />
+                  </label>
+                  <label>
+                    chunks
+                    <input
+                      value={chunksInput}
+                      onChange={(event) => setChunksInput(event.target.value)}
+                    />
+                  </label>
+                  <button disabled={busy || !secret} onClick={onCreate}>
+                    create plan
+                  </button>
+                </div>
+                <div className="actionrow">
+                  <button disabled={busy || !plan?.exists} onClick={onClaim}>
+                    claim accrued
+                  </button>
+                  <button disabled={busy || !plan?.exists} onClick={onCancel}>
+                    cancel &amp; refund
+                  </button>
+                </div>
+                <p className="modeline">
+                  devnet demo mode — the prefunded account stands in for the STRK20 pool
+                </p>
+              </>
+            ) : (
+              <p className="modeline">
+                pool mode: flows implemented, waiting on StarkWare's mainnet proving/discovery
+                endpoints (strk20-hackathon issue #31)
+              </p>
+            )}
+            {actionResult && <p className="mono">{actionResult}</p>}
+          </div>
           <p className="footnote">
             Plans are created and claimed through the STRK20 privacy pool, so no wallet address ever
             touches this contract.
@@ -232,4 +308,11 @@ button { background: #2b57ff; border: 0; color: white; border-radius: 8px; paddi
 .plandetail div { display: flex; justify-content: space-between; background: #151d3a; padding: 8px 12px; border-radius: 8px; }
 .plandetail span { color: #8fa3d0; }
 .footnote { margin-top: 16px; font-size: 12px; color: #5d6f99; }
+.actions { margin-top: 16px; border-top: 1px solid #1e2947; padding-top: 12px; }
+.actions h3 { font-size: 14px; margin-bottom: 10px; }
+.actionrow { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
+.actionrow label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: #8fa3d0; width: 90px; }
+.actionrow button { flex: 1; }
+button:disabled { opacity: 0.45; cursor: default; }
+.modeline { font-size: 12px; color: #6ee7ff; margin: 6px 0; }
 `;

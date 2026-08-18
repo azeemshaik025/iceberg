@@ -59,6 +59,8 @@ pub trait IIceberg<T> {
     fn next_interval_to_execute(self: @T) -> u64;
     fn current_interval(self: @T) -> u64;
     fn active_chunk_rate(self: @T) -> u128;
+    fn in_token(self: @T) -> ContractAddress;
+    fn out_token(self: @T) -> ContractAddress;
     fn plan(self: @T, commitment: felt252) -> Plan;
     /// Total out_token accrued to a plan so far (claimed or not).
     fn accrued_out(self: @T, commitment: felt252) -> u128;
@@ -259,6 +261,14 @@ pub mod Iceberg {
 
         fn active_chunk_rate(self: @ContractState) -> u128 {
             self.chunk_rate.read()
+        }
+
+        fn in_token(self: @ContractState) -> ContractAddress {
+            self.in_token.read()
+        }
+
+        fn out_token(self: @ContractState) -> ContractAddress {
+            self.out_token.read()
         }
 
         fn plan(self: @ContractState, commitment: felt252) -> Plan {
