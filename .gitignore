@@ -6,3 +6,6 @@ dist/
 devnet-deployment.json
 .DS_Store
 *.log
+.env
+.env.*
+!.env.example
