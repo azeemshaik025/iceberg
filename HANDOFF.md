@@ -49,6 +49,41 @@ cd ui && npm i && npm run dev         # paste RPC + iceberg address in the top b
    STRK. Mind the ~10-block rule: wait ~10 blocks between a private tx (or a funding
    transfer) and the next proof.
 
+### Pre-mainnet security review (2026-08-18)
+
+Full writeup: [Iceberg Pre-Mainnet Review](https://claude.ai/code/artifact/783657ca-786d-4e13-b557-25cac5bac578)
+— manual line-by-line pass on `iceberg.cairo` + `ekubo_adapter.cairo` against the Cairo/StarkNet
+vulnerability checklist, cross-checked with a fresh `snforge test` run (21/21 pass). **No
+fund-loss-critical findings.**
+
+**Correction (same day):** the original writeup here suggested removing the `ONLY_KEEPER` gate on
+`execute_batch` as a costless liveness improvement. That was wrong — `min_out` is caller-supplied
+with no on-chain price check, so an unrestricted caller could set `min_out=0` and sandwich the
+batch for profit. The gate is load-bearing, not an oversight. Fixed below.
+
+Two things to decide on before deploying:
+
+1. `execute_batch` is gated to the single `keeper` address (`iceberg.cairo:266`) — SPEC.md and the
+   module docs said "permissionless," which doesn't match the code and, per the correction above,
+   shouldn't: the code is right, the docs were wrong. **Fix**: correct the docs to describe the
+   keeper-gated design as intentional (why: `min_out` trust), not aspirational. No fund risk
+   either way — `cancel()` always works regardless of keeper liveness — but if the keeper dies,
+   every active plan silently stalls until it's restored.
+2. No admin functions anywhere — `keeper`/`pool_address`/`swap_router`/tokens are permanently
+   fixed at construction. If the keeper key is ever lost, there's no rotation path short of a full
+   redeploy. Deliberately **not** adding a rotation function this close to deploying — new admin
+   surface under time pressure is a worse trade than the liveness risk it would fix, given
+   `cancel()` already bounds the downside to "degraded service," never "lost funds." Means the
+   keeper key needs real custody from day one, not a throwaway dev key.
+
+Checklist for the actual deploy tx:
+- [x] Fix SPEC.md's "permissionless" wording to match the (intentionally) keeper-gated code — see below
+- [ ] Confirm the deployed keeper's private key is a real, permanent credential, not a dev key
+- [ ] Confirm `MIN_OUT_SOURCE=avnu` in the mainnet keeper env, never `none`
+- [ ] Re-run `snforge test` (incl. the fork test) immediately before deploying
+- [ ] Verify constructor args against real mainnet addresses (pool, Ekubo router, ETH/USDC pool key — same ones the fork test already pins)
+- [ ] Confirm the deploy targets `Iceberg`/`EkuboAdapter` by exact class name, not a `Mock*`
+
 ### M5 — submission
 
 - Real README (architecture, honest privacy model below, run instructions) + MIT LICENSE
