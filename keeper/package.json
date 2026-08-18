@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node keeper.js",
-    "dry-run": "node keeper.js --dry-run"
+    "dry-run": "node keeper.js --dry-run",
+    "test": "node --test"
   },
   "dependencies": {
     "starknet": "^10.4.0"
