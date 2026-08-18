@@ -442,20 +442,26 @@ export default function App() {
             </div>
             <div className="assembly-grid">
               <div className="assembly-chunks">
-                {mixChunks.map((chunk, index) => (
+                {mixChunks.map((chunk) => (
                   <div
                     className="chunk-row"
                     key={chunk.label}
                     style={{
-                      transform:
-                        mixStage >= 2
-                          ? `translate(26px, ${(1 - index) * 46}px)`
-                          : "translate(0, 0)",
-                      opacity: mixStage >= 2 ? 0.14 : 1,
+                      transform: mixStage >= 2 ? "translateX(22px)" : "translateX(0)",
+                      opacity: mixStage >= 2 ? 0.5 : 1,
                     }}
                   >
-                    <span className="lbl">{mixStage >= 3 ? "—" : chunk.label}</span>
-                    <span style={{ fontSize: "17px" }}>{mixStage >= 2 ? "—" : chunk.amount}</span>
+                    {/* Settles with the amount still legible and the owner struck
+                        out — the public record keeps one and loses the other. */}
+                    {mixStage >= 3 ? (
+                      <span className="counterparty">
+                        <span className="redact" />
+                        <span className="lbl">unattributed</span>
+                      </span>
+                    ) : (
+                      <span className="lbl">{chunk.label}</span>
+                    )}
+                    <span style={{ fontSize: "17px" }}>{chunk.amount}</span>
                   </div>
                 ))}
               </div>
