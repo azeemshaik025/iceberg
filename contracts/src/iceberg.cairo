@@ -83,11 +83,22 @@ pub trait IIceberg<T> {
     /// Executes the next matured interval: swaps the aggregate of all active
     /// plans' chunks in one trade. Returns the received out_token amount.
     fn execute_batch(ref self: T, min_out: u128) -> u128;
+    /// The next interval execute_batch will process. Equal to current_interval()
+    /// once the keeper is fully caught up.
     fn next_interval_to_execute(self: @T) -> u64;
+    /// Elapsed intervals since deployment, derived from the current block
+    /// timestamp — independent of how far execute_batch has actually run.
     fn current_interval(self: @T) -> u64;
+    /// Sum of chunk_amount across plans active as of the last executed
+    /// interval. A plan whose start_interval == next_interval_to_execute()
+    /// isn't reflected here until that interval's batch executes.
     fn active_chunk_rate(self: @T) -> u128;
+    /// The token every plan's chunks are funded in and swapped from.
     fn in_token(self: @T) -> ContractAddress;
+    /// The token every batch swap produces.
     fn out_token(self: @T) -> ContractAddress;
+    /// Raw plan state for a commitment; chunk_amount == 0 means no plan has
+    /// been created for it (Cairo's default Map value).
     fn plan(self: @T, commitment: felt252) -> Plan;
     /// Total out_token accrued to a plan so far (claimed or not).
     fn accrued_out(self: @T, commitment: felt252) -> u128;
