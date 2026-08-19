@@ -1,38 +1,39 @@
 # keeper
 
-Batch executor bot. On every tick it checks whether an interval has matured; if so, it quotes a
-slippage-protected `min_out` from AVNU and calls `execute_batch`, waiting a random jitter first so
-batch timing isn't perfectly predictable. The keeper holds no user funds and has no special power
-beyond triggering execution — the contract enforces interval spacing, amounts, and `min_out` on its
-own.
+The batch executor. On every tick it checks whether an interval has matured. If one has, it asks
+AVNU for a quote, derives a `min_out` that protects against slippage, and calls `execute_batch`. It
+waits a random jitter first, so batch timing stays unpredictable.
+
+The keeper holds no user funds. It has no power beyond triggering execution. The contract enforces
+the interval spacing, the amounts, and `min_out` by itself.
 
 ## Setup
 
 ```bash
 npm i
-cp .env.example .env   # fill in the values — see .env.example for what each one does
-npm start               # or: npm run dry-run
+cp .env.example .env   # fill in the values. .env.example explains each one
+npm start              # or: npm run dry-run
 ```
 
-`--dry-run` logs what the keeper would do without sending transactions, and doesn't require
-`KEEPER_ADDRESS` / `KEEPER_PRIVATE_KEY`.
+`--dry-run` logs what the keeper would do and sends no transactions. It does not need
+`KEEPER_ADDRESS` or `KEEPER_PRIVATE_KEY`.
 
-The one setting worth double-checking before a mainnet run: `MIN_OUT_SOURCE` must be `avnu` (the
-default). `none` sends `min_out=0` and exists only so devnet/mock tokens — which AVNU can't price —
-can still be tested.
+Check one setting before any mainnet run. `MIN_OUT_SOURCE` must be `avnu`, which is the default.
+The value `none` sends `min_out=0`. It exists only so you can test against devnet mock tokens,
+which AVNU cannot price.
 
 ## Local devnet demo
 
-Full sequence (see the root [`README.md`](../README.md#run-it-locally) for exact commands and
-toolchain versions):
+The root [`README.md`](../README.md#run-it-locally) lists the exact commands and toolchain
+versions. The sequence is:
 
-1. Start `starknet-devnet` — plus a block-ticker loop, since devnet freezes chain time between
-   transactions and Iceberg's intervals are timestamp-based.
-2. `cd contracts && scarb build` — required before deploying; `snforge test` only builds test
-   targets, not deploy artifacts.
-3. `cd keeper && node deploy-devnet.mjs` — deploys `MockERC20` (x2) + `MockAMM` + `Iceberg`, then
-   creates two demo plans (`demo-alice`, `demo-bob`) through `privacy_invoke` so a batch actually
-   mixes more than one plan. Writes `../devnet-deployment.json` with every address the keeper and
-   UI need.
-4. `node keeper.js` with envs from that file and `MIN_OUT_SOURCE=none` (mock tokens aren't
-   AVNU-priceable).
+1. Start `starknet-devnet`. Also start a block-ticker loop. Devnet freezes chain time between
+   transactions, and Iceberg reads its intervals from the block timestamp.
+2. Run `cd contracts && scarb build`. Do this before you deploy. `snforge test` builds test
+   targets only, not deploy artifacts.
+3. Run `cd keeper && node deploy-devnet.mjs`. This deploys two `MockERC20` contracts, one
+   `MockAMM`, and `Iceberg`. It then creates two demo plans through `privacy_invoke`, named
+   `demo-alice` and `demo-bob`, so each batch mixes more than one plan. It writes
+   `../devnet-deployment.json`, which holds every address the keeper and the interface need.
+4. Run `node keeper.js` with the environment values from that file. Set `MIN_OUT_SOURCE=none`,
+   because AVNU cannot price the mock tokens.

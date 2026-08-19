@@ -1,84 +1,92 @@
 # 🧊 Iceberg
 
-**Private accumulation and exit on Starknet.** Scheduled DCA/TWAP where the chain sees only
-"the STRK20 pool swapped X" — never who was accumulating, their totals, or their schedules.
+**Private accumulation and exit on Starknet.** Iceberg runs scheduled DCA and TWAP orders. The
+chain records only that the STRK20 pool made a swap. It never records who was accumulating, how
+much they hold, or what their schedule is.
 
-Built for the [STRK20 Private Sprint](https://strk20.starknet.io/hackathon) (Aug 14–31, 2026).
+Built for the [STRK20 Private Sprint](https://strk20.starknet.io/hackathon), 14 to 31 August 2026.
 
 ## The idea
 
-Buying or selling a position gradually instead of all at once is a common strategy — but doing it
-on a public chain means broadcasting your entire schedule, running total, and identity to anyone
-watching. Iceberg batches many users' recurring orders into one anonymous pool swap per interval:
-individually, each person's chunk size, schedule, and total stay hidden. Only the pooled swap is
-ever visible on-chain — the tip of the iceberg.
+Traders buy and sell large positions gradually instead of all at once. On a public chain, that
+strategy is visible to everyone. Your schedule, your running total, and your identity are all on
+display, so anyone can copy you or trade ahead of you.
 
-1. Deposit into the STRK20 shielded pool and privately tell Iceberg "buy $X of ETH in N chunks."
-2. Every interval, a keeper bot sums that interval's due chunks across *all* active plans and
-   executes one swap for the whole group.
-3. Claim your share back into the shielded pool whenever you want, using a secret only you know.
+Iceberg groups many users' scheduled orders into one anonymous pool swap per interval. Each
+person's chunk size, schedule, and total stay hidden inside that group. The chain shows only the
+combined swap. That swap is the tip of the iceberg.
 
-## What's actually private
+1. Deposit into the STRK20 shielded pool. Then tell Iceberg privately to buy a token in N chunks.
+2. Each interval, a keeper sums the chunks due from every active plan. It executes one swap for
+   the whole group.
+3. Claim your share back into the shielded pool whenever you want. You claim with a secret that
+   only you hold.
+
+## What is actually private
 
 | Public | Private |
 |---|---|
-| Each interval's aggregate swap amount and timing | Who created any plan |
-| Net flow in/out of the pool | Per-user totals and schedules (mixed across the batch) |
-| That a swap happened | Claim identity |
+| Each interval's combined swap amount and its timing | Who created any plan |
+| Net flow in and out of the pool | Per-user totals and schedules, mixed across the group |
+| That a swap happened | Who claims |
 
-Swap **amounts and timing are always visible on STRK20** — private DeFi routes through shared
-anonymizer contracts into public venues, so identity privacy plus mixing is the claim here, never
-amount privacy. See [`SPEC.md`](SPEC.md) for the full design and known tradeoffs.
+STRK20 always shows swap amounts and timing. Private DeFi routes through shared anonymizer
+contracts into public venues. So Iceberg claims identity privacy plus mixing. It does not claim
+amount privacy.
+
+Read [`SPEC.md`](SPEC.md) for the full design and the known tradeoffs.
 
 ## Repo layout
 
-- [`contracts/`](contracts/) — Cairo: `Iceberg` core + `EkuboAdapter`, 20 unit tests + 1
-  mainnet-fork test. [→ contracts/README.md](contracts/README.md)
-- [`keeper/`](keeper/) — batch executor bot (AVNU-quoted slippage guard, jittered timing) + local
-  devnet demo deploy. [→ keeper/README.md](keeper/README.md)
-- [`ui/`](ui/) — split-screen demo: what the chain sees vs. what only you see, with a live
-  create/claim/cancel action panel on devnet. [→ ui/README.md](ui/README.md)
+- [`contracts/`](contracts/) holds the Cairo code. It contains the `Iceberg` core and the
+  `EkuboAdapter`, with 20 unit tests and 1 mainnet-fork test.
+  [Read more](contracts/README.md).
+- [`keeper/`](keeper/) holds the batch executor. It quotes AVNU for slippage protection and adds
+  random timing jitter. It also deploys the local demo. [Read more](keeper/README.md).
+- [`ui/`](ui/) holds the demo interface. It shows what the chain sees above a waterline, and what
+  only you can decode below it. [Read more](ui/README.md).
 
 ## Run it locally
 
-Toolchain (versions match the pins in StarkWare's `starknet-privacy` repo):
-scarb 2.17.0 · starknet-foundry 0.59.0 · universal-sierra-compiler · starknet-devnet 0.8.0-rc.3 ·
-Node ≥ 24.
+The toolchain versions match the pins in StarkWare's `starknet-privacy` repo. You need scarb
+2.17.0, starknet-foundry 0.59.0, universal-sierra-compiler, starknet-devnet 0.8.0-rc.3, and Node
+24 or later.
 
-**Contracts** — 20 unit tests, plus a fork test that swaps against real mainnet Ekubo liquidity:
+Run the contract tests. One of them forks mainnet and swaps against real Ekubo liquidity.
 
 ```bash
 cd contracts
 snforge test        # 21 tests
-scarb build         # required before deploying: snforge only builds test targets
+scarb build         # required before you deploy: snforge builds test targets only
 ```
 
-**A full demo loop** — devnet, contracts, two seeded plans, the keeper, and the UI:
+Run the full demo loop. This starts devnet, deploys the contracts, seeds two plans, runs the
+keeper, and serves the interface.
 
 ```bash
 starknet-devnet --seed 0 --port 5050          # terminal 1
 
-# terminal 2 — devnet freezes chain time between transactions, so nudge it along
+# terminal 2. Devnet freezes chain time between transactions, so advance it.
 while true; do curl -s localhost:5050 -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"devnet_createBlock","params":{},"id":1}' >/dev/null; sleep 20; done
 
-cd keeper && npm i && node deploy-devnet.mjs   # deploys everything, seeds 2 plans
-npm start                                      # keeper: see keeper/README.md for env
+cd keeper && npm i && node deploy-devnet.mjs   # deploys everything and seeds 2 plans
+npm start                                      # the keeper. See keeper/README.md for the env
 
-cd ../ui && npm i && npm run dev               # set RPC + contract address in Settings
+cd ../ui && npm i && npm run dev               # set the RPC and contract address in Settings
 ```
 
-The seeded plan secrets are `demo-alice` and `demo-bob`; intervals are 60s on devnet. Enter either
-secret in the lower half of the UI to decode that plan.
+The seeded plan secrets are `demo-alice` and `demo-bob`. Intervals last 60 seconds on devnet.
+Enter either secret in the lower half of the interface to decode that plan.
 
 ## Status
 
-Contracts, keeper, and UI are built and tested against a local devnet, including a fork test that
-executes real swaps against mainnet Ekubo liquidity.
+The contracts, the keeper, and the interface all work against a local devnet. The test suite
+includes a fork test that swaps against real mainnet Ekubo liquidity.
 
-The private create/claim flow is written against the StarkWare privacy SDK but not yet live: the
-mainnet proving and discovery service URLs have not been published, and the starter kit ships no
-Sepolia equivalents either. Until they exist, the deployed UI is read-only.
+The private create and claim flow is written against the StarkWare privacy SDK, but it is not live
+yet. StarkWare has not published the mainnet proving and discovery service URLs. The starter kit
+ships no Sepolia equivalents either. Until those exist, the deployed interface stays read-only.
 
 ## License
 

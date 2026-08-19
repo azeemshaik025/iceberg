@@ -1,6 +1,8 @@
 {
   "name": "iceberg-keeper",
   "version": "0.1.0",
+  "description": "Batch executor for Iceberg: quotes min_out from AVNU, jitters timing, calls execute_batch",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
