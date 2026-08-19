@@ -32,7 +32,7 @@ amount privacy. See [`SPEC.md`](SPEC.md) for the full design and known tradeoffs
 
 ## Repo layout
 
-- [`contracts/`](contracts/) — Cairo: `Iceberg` core + `EkuboAdapter`, 16 unit tests + 1
+- [`contracts/`](contracts/) — Cairo: `Iceberg` core + `EkuboAdapter`, 20 unit tests + 1
   mainnet-fork test. [→ contracts/README.md](contracts/README.md)
 - [`keeper/`](keeper/) — batch executor bot (AVNU-quoted slippage guard, jittered timing) + local
   devnet demo deploy. [→ keeper/README.md](keeper/README.md)
@@ -41,10 +41,13 @@ amount privacy. See [`SPEC.md`](SPEC.md) for the full design and known tradeoffs
 
 ## Status
 
-Contracts, keeper, and UI are built and tested against a local devnet. Mainnet activation is
-code-complete but blocked on StarkWare publishing the mainnet proving/discovery service URLs
-(tracked in [strk20-hackathon issue #31](https://github.com/starkience/strk20-hackathon/issues/31)).
-See [`HANDOFF.md`](HANDOFF.md) for the live checklist.
+Contracts, keeper, and UI are built and tested against a local devnet, including a fork test that
+executes real swaps against mainnet Ekubo liquidity.
+
+The private create/claim flow is written against the StarkWare privacy SDK but not yet live: the
+mainnet proving and discovery service URLs have not been published, and the starter kit ships no
+Sepolia equivalents either. Until they exist, the deployed UI is read-only. See
+[`HANDOFF.md`](HANDOFF.md) for the checklist and the exact activation steps.
 
 ## License
 

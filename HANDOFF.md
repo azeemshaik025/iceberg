@@ -5,7 +5,7 @@ What's left is mainnet (M4) and submission polish (M5). Deadline: **Aug 31, 23:5
 
 ## Run the demo loop locally
 
-Toolchain (already in `~/.local/bin` on Azeem's machine; versions match StarkWare's repo pins):
+Toolchain (versions match the pins in StarkWare's `starknet-privacy` repo):
 scarb 2.17.0 · snforge 0.59.0 · universal-sierra-compiler · starknet-devnet 0.8.0-rc.3 · Node ≥ 24
 
 ```bash
@@ -31,11 +31,18 @@ cd ui && npm i && npm run dev         # paste RPC + iceberg address in the top b
 
 ### M4 — mainnet (blocked partly on StarkWare)
 
-1. **BLOCKER: StarkWare has not published the proving/discovery service URLs**
-   (promised "before Aug 14"; [issue #31](https://github.com/starkience/strk20-hackathon/issues/31)
-   is unanswered). Without them no team can build private txs. Watch that issue;
-   consider commenting that we're endpoint-blocked with mainnet-ready code.
-   Note: AVNU private swaps are live in prod, so the infra exists — only URLs are missing.
+1. **BLOCKER: the mainnet proving and discovery service URLs are not published.**
+   `docs/MAINNET-DAY-0.md` says they would land before Aug 14 and that the starter kit ships
+   Sepolia equivalents; as of Aug 19 neither is true — the starter kit's `.env.example` carries
+   only an RPC key. Self-hosting the prover is documented but wants 48 vCPU / 96 GB.
+   The services demonstrably exist: AVNU's private swaps run in production, and StarkWare's own
+   app at [strk20.starknet.io/app](https://strk20.starknet.io/app) registers and shields on
+   mainnet. Only the public URLs are missing.
+
+   **This does not block eligibility.** Registration is plain `signMessage` plus a contract call
+   (day-0 guide: "your wallet needs no STRK20 support for this"), and shielding can be done
+   through StarkWare's app. Both emit pool events, which is what `strk20.json` is checked
+   against — so the three required mainnet transactions can be made without the endpoints.
 2. Deploy `EkuboAdapter` + `Iceberg` (constructor: pool, keeper, in, out, adapter, selector("swap"), interval).
    Mainnet constants: pool `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`,
    Ekubo router v3.0.13 `0x0199741822c2dc722f6f605204f35e56dbc23bceed54818168c4c49e4fb8737e`,
@@ -51,10 +58,10 @@ cd ui && npm i && npm run dev         # paste RPC + iceberg address in the top b
 
 ### Pre-mainnet security review (2026-08-18)
 
-Full writeup: [Iceberg Pre-Mainnet Review](https://claude.ai/code/artifact/783657ca-786d-4e13-b557-25cac5bac578)
-— manual line-by-line pass on `iceberg.cairo` + `ekubo_adapter.cairo` against the Cairo/StarkNet
+Manual line-by-line pass on `iceberg.cairo` + `ekubo_adapter.cairo` against the Cairo/Starknet
 vulnerability checklist, cross-checked with a fresh `snforge test` run (21/21 pass). **No
-fund-loss-critical findings.**
+fund-loss-critical findings.** Reviewed: reentrancy on the swap path, arithmetic over/underflow in
+the index accounting, access control on every entrypoint, and the refund/claim double-spend paths.
 
 **Correction (same day):** the original writeup here suggested removing the `ONLY_KEEPER` gate on
 `execute_batch` as a costless liveness improvement. That was wrong — `min_out` is caller-supplied
