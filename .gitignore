@@ -10,3 +10,7 @@ devnet-deployment.json
 .env.*
 !.env.example
 design/
+
+# Internal working notes and local editor config — kept out of the public repo.
+HANDOFF.md
+.claude/

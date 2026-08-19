@@ -39,6 +39,38 @@ amount privacy. See [`SPEC.md`](SPEC.md) for the full design and known tradeoffs
 - [`ui/`](ui/) — split-screen demo: what the chain sees vs. what only you see, with a live
   create/claim/cancel action panel on devnet. [→ ui/README.md](ui/README.md)
 
+## Run it locally
+
+Toolchain (versions match the pins in StarkWare's `starknet-privacy` repo):
+scarb 2.17.0 · starknet-foundry 0.59.0 · universal-sierra-compiler · starknet-devnet 0.8.0-rc.3 ·
+Node ≥ 24.
+
+**Contracts** — 20 unit tests, plus a fork test that swaps against real mainnet Ekubo liquidity:
+
+```bash
+cd contracts
+snforge test        # 21 tests
+scarb build         # required before deploying: snforge only builds test targets
+```
+
+**A full demo loop** — devnet, contracts, two seeded plans, the keeper, and the UI:
+
+```bash
+starknet-devnet --seed 0 --port 5050          # terminal 1
+
+# terminal 2 — devnet freezes chain time between transactions, so nudge it along
+while true; do curl -s localhost:5050 -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"devnet_createBlock","params":{},"id":1}' >/dev/null; sleep 20; done
+
+cd keeper && npm i && node deploy-devnet.mjs   # deploys everything, seeds 2 plans
+npm start                                      # keeper: see keeper/README.md for env
+
+cd ../ui && npm i && npm run dev               # set RPC + contract address in Settings
+```
+
+The seeded plan secrets are `demo-alice` and `demo-bob`; intervals are 60s on devnet. Enter either
+secret in the lower half of the UI to decode that plan.
+
 ## Status
 
 Contracts, keeper, and UI are built and tested against a local devnet, including a fork test that
@@ -46,8 +78,7 @@ executes real swaps against mainnet Ekubo liquidity.
 
 The private create/claim flow is written against the StarkWare privacy SDK but not yet live: the
 mainnet proving and discovery service URLs have not been published, and the starter kit ships no
-Sepolia equivalents either. Until they exist, the deployed UI is read-only. See
-[`HANDOFF.md`](HANDOFF.md) for the checklist and the exact activation steps.
+Sepolia equivalents either. Until they exist, the deployed UI is read-only.
 
 ## License
 

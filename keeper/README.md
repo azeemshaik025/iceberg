@@ -23,8 +23,8 @@ can still be tested.
 
 ## Local devnet demo
 
-Full sequence (see the root [`HANDOFF.md`](../HANDOFF.md) for exact commands and toolchain
-versions):
+Full sequence (see the root [`README.md`](../README.md#run-it-locally) for exact commands and
+toolchain versions):
 
 1. Start `starknet-devnet` — plus a block-ticker loop, since devnet freezes chain time between
    transactions and Iceberg's intervals are timestamp-based.
