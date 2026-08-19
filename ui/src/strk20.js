@@ -46,6 +46,25 @@ const planCommitment = (secret) =>
 /// INVALID_REQUEST_PAYLOAD.
 const toWalletFelt = (value) => `0x${BigInt(value).toString(16)}`;
 
+const viewCall = async (provider, contractAddress, entrypoint) => {
+  const result = await provider.callContract({ contractAddress, entrypoint, calldata: [] });
+  return result[0];
+};
+
+/// in_token/out_token are immutable on Iceberg once deployed, so caching by
+/// address is always safe — same convention as devnet-writer.js's viewCall.
+const tokenCache = new Map();
+async function resolveTokens(provider, icebergAddress) {
+  if (tokenCache.has(icebergAddress)) return tokenCache.get(icebergAddress);
+  const [inToken, outToken] = await Promise.all([
+    viewCall(provider, icebergAddress, "in_token"),
+    viewCall(provider, icebergAddress, "out_token"),
+  ]);
+  const tokens = { inToken, outToken };
+  tokenCache.set(icebergAddress, tokens);
+  return tokens;
+}
+
 /// Connects to a STRK20-capable wallet, throwing a clear, user-facing error
 /// if none is found or it doesn't support the wallet API — never a silent
 /// fallback to a public flow.
@@ -75,7 +94,8 @@ export async function shield(provider, token, amount) {
 /// Iceberg helper and invokes privacy_invoke(CreatePlan) in the same proof.
 export async function createPlan(provider, params) {
   const account = await connectPrivacyWallet(provider);
-  const { icebergAddress, inToken, chunkAmount, numChunks, secret } = params;
+  const { icebergAddress, chunkAmount, numChunks, secret } = params;
+  const { inToken } = await resolveTokens(provider, icebergAddress);
   const total = chunkAmount * BigInt(numChunks);
   const actions = [
     { type: "withdraw", token: inToken, amount: toWalletFelt(total), recipient: icebergAddress },
@@ -98,7 +118,8 @@ export async function createPlan(provider, params) {
 /// note's id — the pool credits it with the plan's accrued OpenNoteDeposit.
 export async function claim(provider, params) {
   const account = await connectPrivacyWallet(provider);
-  const { icebergAddress, outToken, secret } = params;
+  const { icebergAddress, secret } = params;
+  const { outToken } = await resolveTokens(provider, icebergAddress);
   const actions = [
     { type: "transfer", token: outToken, amount: "OPEN", recipient: account.address },
     {
@@ -115,7 +136,8 @@ export async function claim(provider, params) {
 /// note's id — the pool credits it with the unswapped refund.
 export async function cancel(provider, params) {
   const account = await connectPrivacyWallet(provider);
-  const { icebergAddress, inToken, secret } = params;
+  const { icebergAddress, secret } = params;
+  const { inToken } = await resolveTokens(provider, icebergAddress);
   const actions = [
     { type: "transfer", token: inToken, amount: "OPEN", recipient: account.address },
     {
