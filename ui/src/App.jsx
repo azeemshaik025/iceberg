@@ -207,8 +207,8 @@ export default function App() {
     const totalChunks = plan.endInterval - plan.startInterval + 1n;
     return {
       chunk: formatAmount(plan.chunkAmount, Number(inDecimals)),
-      window: `intervals ${plan.startInterval}–${plan.endInterval}`,
-      progress: `${executedChunks(plan)} / ${totalChunks} chunks`,
+      window: `${plan.startInterval}–${plan.endInterval}`,
+      progress: `${executedChunks(plan)} / ${totalChunks}`,
       accrued: formatAmount(plan.accruedOut, Number(outDecimals)),
       claimed: formatAmount(plan.claimedOut, Number(outDecimals)),
       fraction: totalChunks > 0n ? Number(executedChunks(plan)) / Number(totalChunks) : 0,
@@ -313,8 +313,9 @@ export default function App() {
             <span className="badge">STRK20 private sprint</span>
           </div>
           <p className="thesis serif">
-            Private scheduled trading on Starknet. The chain records one anonymous swap per interval
-            — only you can decode your own schedule out of it.
+            Private scheduled trading on Starknet. The chain records{" "}
+            <em>one anonymous swap per interval</em> — only you can decode{" "}
+            <em>your own schedule</em> out of it.
           </p>
         </div>
         <div className="header-right">
@@ -340,7 +341,7 @@ export default function App() {
           <span className="metric-value">{status ? String(status.nextInterval) : "—"}</span>
         </div>
         <div className="metric">
-          <span className="lbl">active batch size / interval</span>
+          <span className="lbl">batch size per interval</span>
           <span className="metric-value">
             {status ? formatAmount(status.chunkRate, Number(inDecimals)) : "—"}
             <span className="metric-unit">{inSymbol}</span>
@@ -461,7 +462,7 @@ export default function App() {
                     ) : (
                       <span className="lbl">{chunk.label}</span>
                     )}
-                    <span style={{ fontSize: "17px" }}>{chunk.amount}</span>
+                    <span className="amount">{chunk.amount}</span>
                   </div>
                 ))}
               </div>
@@ -569,13 +570,13 @@ export default function App() {
                 </span>
               </div>
               <div className="plan-field">
-                <span className="lbl">window</span>
+                <span className="lbl">interval window</span>
                 <span className={phase === "locked" ? "plan-value locked" : "plan-value"}>
                   {showField("window")}
                 </span>
               </div>
               <div className="plan-field">
-                <span className="lbl">progress</span>
+                <span className="lbl">chunks executed</span>
                 <span className={phase === "locked" ? "plan-value locked" : "plan-value"}>
                   {showField("progress")}
                 </span>
