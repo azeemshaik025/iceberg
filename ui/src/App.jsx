@@ -656,7 +656,7 @@ export default function App() {
               {actionResult ||
                 (demoMode
                   ? "Devnet demo mode — the prefunded account stands in for the STRK20 pool."
-                  : "Pool mode: flows implemented, waiting on StarkWare's mainnet proving and discovery endpoints (strk20-hackathon issue #31).")}
+                  : "Pool mode: flows implemented via the Wallet API (strk20.js) — connect a STRK20-capable wallet (Ready) to use them. Not wired to these buttons yet.")}
             </span>
           </div>
 
