@@ -4,6 +4,7 @@ target/
 dist/
 .snfoundry_cache/
 devnet-deployment.json
+mainnet-deployment.json
 .DS_Store
 *.log
 .env
