@@ -81,9 +81,16 @@ export default function App() {
   // two contracts' feeds, and its cursor would skip blocks on the new one.
   const feedGenerationRef = useRef(0);
 
+  // A from-block-0 event scan against a contract deployed near the chain's
+  // current tip can take many paginated RPC round-trips to reach "latest".
+  // It must never gate the status/plan display, and a slow scan must not be
+  // restarted from under itself by the next poll tick.
+  const batchScanInFlightRef = useRef(false);
+
   useEffect(() => {
     feedGenerationRef.current += 1;
     nextFromBlockRef.current = 0;
+    batchScanInFlightRef.current = false;
     setBatches([]);
   }, [provider, address]);
 
@@ -91,22 +98,38 @@ export default function App() {
     if (!address) return;
     const generation = feedGenerationRef.current;
     try {
-      const [nextStatus, { newBatches, nextFromBlock }] = await Promise.all([
+      const [nextStatus, nextPlan] = await Promise.all([
         fetchStatus(provider, address),
-        fetchBatches(provider, address, nextFromBlockRef.current),
+        commitment ? fetchPlan(provider, address, commitment) : Promise.resolve(null),
       ]);
-      const nextPlan = commitment ? await fetchPlan(provider, address, commitment) : null;
       if (generation !== feedGenerationRef.current) return;
-      nextFromBlockRef.current = nextFromBlock;
       setStatus(nextStatus);
-      if (newBatches.length > 0) {
-        setBatches((prev) => [...newBatches.reverse(), ...prev]);
-      }
       setPlan(nextPlan);
       setError("");
     } catch (refreshError) {
       if (generation !== feedGenerationRef.current) return;
       setError(String(refreshError.message ?? refreshError));
+    }
+
+    if (batchScanInFlightRef.current) return;
+    batchScanInFlightRef.current = true;
+    try {
+      const { newBatches, nextFromBlock } = await fetchBatches(
+        provider,
+        address,
+        nextFromBlockRef.current,
+      );
+      if (generation !== feedGenerationRef.current) return;
+      nextFromBlockRef.current = nextFromBlock;
+      if (newBatches.length > 0) {
+        setBatches((prev) => [...newBatches.reverse(), ...prev]);
+      }
+    } catch (batchError) {
+      if (generation === feedGenerationRef.current) {
+        console.error("fetchBatches failed:", batchError);
+      }
+    } finally {
+      batchScanInFlightRef.current = false;
     }
   }, [provider, address, commitment]);
 
