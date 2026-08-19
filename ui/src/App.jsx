@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import "./App.css";
 import { cancelDemo, claimDemo, createPlanDemo, isDevnetRpc } from "./devnet-writer.js";
 import { fetchBatches, fetchPlan, fetchStatus, makeProvider, planCommitment } from "./iceberg.js";
+import { cancel as poolCancel, claim as poolClaim, createPlan as poolCreatePlan } from "./strk20.js";
+import { detectPrivacyCapable } from "./wallet-account-v6.js";
 
 const stored = (key, fallback) => localStorage.getItem(key) ?? fallback;
 
@@ -120,6 +122,30 @@ export default function App() {
   const [actionResult, setActionResult] = useState("");
   const demoMode = isDevnetRpc(rpcUrl);
 
+  // Pool mode's write buttons are gated on an actually-connected, STRK20-capable
+  // wallet rather than just "not demo mode" — same check strk20.js itself makes
+  // before submitting, so the button state never promises something a click
+  // would immediately fail on.
+  const [walletCapable, setWalletCapable] = useState(false);
+  useEffect(() => {
+    if (demoMode) {
+      setWalletCapable(false);
+      return;
+    }
+    let cancelled = false;
+    detectPrivacyCapable(provider)
+      .then((capable) => {
+        if (!cancelled) setWalletCapable(capable);
+      })
+      .catch(() => {
+        if (!cancelled) setWalletCapable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, demoMode]);
+  const canAct = demoMode || walletCapable;
+
   const runAction = async (label, action) => {
     setBusy(true);
     setActionResult(`${label}…`);
@@ -134,21 +160,28 @@ export default function App() {
     }
   };
 
-  const onCreate = () =>
-    runAction("create", () =>
-      createPlanDemo({
-        rpcUrl,
-        icebergAddress: address,
-        chunkAmount:
-          BigInt(Math.round(Number(chunkInput) * 100)) * 10n ** (BigInt(inDecimals) - 2n),
-        numChunks: Number(chunksInput),
-        secret,
-      }),
+  const onCreate = () => {
+    const chunkAmount =
+      BigInt(Math.round(Number(chunkInput) * 100)) * 10n ** (BigInt(inDecimals) - 2n);
+    const numChunks = Number(chunksInput);
+    return runAction("create", () =>
+      demoMode
+        ? createPlanDemo({ rpcUrl, icebergAddress: address, chunkAmount, numChunks, secret })
+        : poolCreatePlan(provider, { icebergAddress: address, chunkAmount, numChunks, secret }),
     );
+  };
   const onClaim = () =>
-    runAction("claim", () => claimDemo({ rpcUrl, icebergAddress: address, secret }));
+    runAction("claim", () =>
+      demoMode
+        ? claimDemo({ rpcUrl, icebergAddress: address, secret })
+        : poolClaim(provider, { icebergAddress: address, secret }),
+    );
   const onCancel = () =>
-    runAction("cancel", () => cancelDemo({ rpcUrl, icebergAddress: address, secret }));
+    runAction("cancel", () =>
+      demoMode
+        ? cancelDemo({ rpcUrl, icebergAddress: address, secret })
+        : poolCancel(provider, { icebergAddress: address, secret }),
+    );
 
   const executedChunks = useCallback(
     (currentPlan) => {
@@ -630,7 +663,7 @@ export default function App() {
               </label>
               <button
                 className="btn-accent"
-                disabled={!demoMode || busy || !secret}
+                disabled={!canAct || busy || !secret}
                 onClick={onCreate}
               >
                 create plan
@@ -639,14 +672,14 @@ export default function App() {
             <div className="act-buttons">
               <button
                 className="btn-dark strong"
-                disabled={!demoMode || busy || !plan?.exists}
+                disabled={!canAct || busy || !plan?.exists}
                 onClick={onClaim}
               >
                 claim accrued
               </button>
               <button
                 className="btn-dark"
-                disabled={!demoMode || busy || !plan?.exists}
+                disabled={!canAct || busy || !plan?.exists}
                 onClick={onCancel}
               >
                 cancel &amp; refund
@@ -656,7 +689,9 @@ export default function App() {
               {actionResult ||
                 (demoMode
                   ? "Devnet demo mode — the prefunded account stands in for the STRK20 pool."
-                  : "Pool mode: flows implemented via the Wallet API (strk20.js) — connect a STRK20-capable wallet (Ready) to use them. Not wired to these buttons yet.")}
+                  : walletCapable
+                    ? "Pool mode: connected to a STRK20-capable wallet — these submit real mainnet transactions."
+                    : "Pool mode: connect a STRK20-capable wallet (Ready, wallet API ≥ 0.10) to use these actions.")}
             </span>
           </div>
 
