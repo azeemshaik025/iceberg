@@ -60,18 +60,22 @@ async function discoverWallets(timeoutMs = 2000) {
 /// Resolves a connected WalletAccountV6 plus whether it's STRK20-capable.
 /// `provider` is an RpcProvider (e.g. from iceberg.js's makeProvider) — the
 /// wallet still does its own proving/discovery, this is only for reading
-/// chain state the account interface needs. Returns null if no wallet
-/// extension is found at all (distinct from "found but not privacy-capable",
-/// which callers should surface directly).
+/// chain state the account interface needs. Returns null if no Ready wallet
+/// is found (distinct from "found Ready but not privacy-capable", which
+/// callers should surface directly).
+///
+/// Only ever selects a wallet whose name matches "ready" — never falls back
+/// to "whatever extension answered first". get-starknet-discovery finds
+/// every wallet-standard-compatible extension on the page (MetaMask's
+/// Starknet snap included), and calling requestAccounts/supportedWalletApi
+/// against a non-Ready wallet just gets rejected repeatedly with no useful
+/// signal, on a loop, for as long as the page is open.
 export async function resolvePrivacyWallet(provider) {
   if (typeof window === "undefined") return null;
 
   const wallets = await discoverWallets();
-  if (wallets.length === 0) return null;
-
-  const selected =
-    wallets.find((w) => `${w.name ?? ""}`.toLowerCase().includes("ready")) ??
-    wallets[0];
+  const selected = wallets.find((w) => `${w.name ?? ""}`.toLowerCase().includes("ready"));
+  if (!selected) return null;
 
   try {
     await walletV6.requestAccounts(selected);
