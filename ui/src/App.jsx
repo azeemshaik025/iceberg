@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { cancelDemo, claimDemo, createPlanDemo, isDevnetRpc } from "./devnet-writer.js";
+import { DEMO_BATCHES, DEMO_PLAN, DEMO_SECRET, DEMO_STATUS } from "./demo-data.js";
 import { fetchBatches, fetchPlan, fetchStatus, makeProvider, planCommitment } from "./iceberg.js";
 import { cancel as poolCancel, claim as poolClaim, createPlan as poolCreatePlan } from "./strk20.js";
 import { detectPrivacyCapable } from "./wallet-account-v6.js";
@@ -70,6 +71,16 @@ export default function App() {
       return null;
     }
   }, [secret]);
+
+  // No live status yet — either no contract is configured, or the RPC hasn't
+  // answered. Either way, show real captured devnet data instead of a blank
+  // page, clearly tagged as demo. The moment a live fetch succeeds, `status`
+  // becomes non-null and this falls away on its own — same components, two
+  // data sources.
+  const usingDemo = !status;
+  const displayStatus = status ?? DEMO_STATUS;
+  const displayBatches = status ? batches : DEMO_BATCHES;
+  const displayPlan = usingDemo && secret === DEMO_SECRET ? DEMO_PLAN : plan;
 
   // Cursor for fetchBatches' incremental scan: which block to resume from.
   // Reset (below) only when provider/address change — not on every render,
@@ -185,14 +196,14 @@ export default function App() {
 
   const executedChunks = useCallback(
     (currentPlan) => {
-      if (!status || !currentPlan?.exists) return 0n;
-      if (status.nextInterval <= currentPlan.startInterval) return 0n;
-      const lastExecuted = status.nextInterval - 1n;
+      if (!displayStatus || !currentPlan?.exists) return 0n;
+      if (displayStatus.nextInterval <= currentPlan.startInterval) return 0n;
+      const lastExecuted = displayStatus.nextInterval - 1n;
       if (lastExecuted >= currentPlan.endInterval)
         return currentPlan.endInterval - currentPlan.startInterval + 1n;
       return lastExecuted - currentPlan.startInterval + 1n;
     },
-    [status],
+    [displayStatus],
   );
 
   // Decode phase: "locked" masks every value, "decoding" scrambles toward the
@@ -214,7 +225,7 @@ export default function App() {
   useEffect(() => stopReveal, []);
 
   const runDecode = () => {
-    if (!plan?.exists || phase === "decoding") return;
+    if (!displayPlan?.exists || phase === "decoding") return;
     stopReveal();
     const start = Date.now();
     setPhase("decoding");
@@ -236,17 +247,17 @@ export default function App() {
   };
 
   const planFields = useMemo(() => {
-    if (!plan?.exists) return null;
-    const totalChunks = plan.endInterval - plan.startInterval + 1n;
+    if (!displayPlan?.exists) return null;
+    const totalChunks = displayPlan.endInterval - displayPlan.startInterval + 1n;
     return {
-      chunk: formatAmount(plan.chunkAmount, Number(inDecimals)),
-      window: `${plan.startInterval}–${plan.endInterval}`,
-      progress: `${executedChunks(plan)} / ${totalChunks}`,
-      accrued: formatAmount(plan.accruedOut, Number(outDecimals)),
-      claimed: formatAmount(plan.claimedOut, Number(outDecimals)),
-      fraction: totalChunks > 0n ? Number(executedChunks(plan)) / Number(totalChunks) : 0,
+      chunk: formatAmount(displayPlan.chunkAmount, Number(inDecimals)),
+      window: `${displayPlan.startInterval}–${displayPlan.endInterval}`,
+      progress: `${executedChunks(displayPlan)} / ${totalChunks}`,
+      accrued: formatAmount(displayPlan.accruedOut, Number(outDecimals)),
+      claimed: formatAmount(displayPlan.claimedOut, Number(outDecimals)),
+      fraction: totalChunks > 0n ? Number(executedChunks(displayPlan)) / Number(totalChunks) : 0,
     };
-  }, [plan, inDecimals, outDecimals, executedChunks]);
+  }, [displayPlan, inDecimals, outDecimals, executedChunks]);
 
   const showField = (key) => {
     if (!planFields) return "—";
@@ -257,6 +268,9 @@ export default function App() {
   };
 
   // Batch assembly animation: chunks visible → slide out → aggregate resolves.
+  // Starts resolved (stage 3) — the scroll-trigger below resets and replays it
+  // the first time the panel actually enters view, instead of on page load
+  // where nobody but the person who reloaded ever sees it run.
   const [mixStage, setMixStage] = useState(3);
   const mixTimers = useRef([]);
   const playMix = useCallback(() => {
@@ -270,11 +284,32 @@ export default function App() {
   }, []);
   useEffect(() => () => mixTimers.current.forEach(clearTimeout), []);
 
+  const assemblyRef = useRef(null);
+  const hasAutoPlayedRef = useRef(false);
+  useEffect(() => {
+    const node = assemblyRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !hasAutoPlayedRef.current) {
+          hasAutoPlayedRef.current = true;
+          playMix();
+        }
+      },
+      { threshold: 0.4 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [playMix]);
+
   // The keeper also executes intervals where nothing was due. Those rows carry
   // no information, so the feed lists only intervals that actually swapped and
   // reports how many empty ones were skipped.
-  const filledBatches = useMemo(() => batches.filter((batch) => batch.inAmount > 0n), [batches]);
-  const emptyCount = batches.length - filledBatches.length;
+  const filledBatches = useMemo(
+    () => displayBatches.filter((batch) => batch.inAmount > 0n),
+    [displayBatches],
+  );
+  const emptyCount = displayBatches.length - filledBatches.length;
 
   // Feature the largest batch rather than the newest: volume is the best proxy
   // we have for "most plans overlapped here", which is what this panel explains.
@@ -286,20 +321,16 @@ export default function App() {
       ),
     [filledBatches],
   );
-  const featuredKey = featured ? String(featured.interval) : "";
-  useEffect(() => {
-    if (featuredKey) playMix();
-  }, [featuredKey, playMix]);
 
   // Only the aggregate is on-chain. If a decoded plan was active in this
   // interval we can name our own chunk; everything else stays unattributed.
   const mixChunks = useMemo(() => {
     if (!featured) return [];
     const mine =
-      phase === "open" && plan?.exists &&
-      featured.interval >= plan.startInterval &&
-      featured.interval <= plan.endInterval
-        ? plan.chunkAmount
+      phase === "open" && displayPlan?.exists &&
+      featured.interval >= displayPlan.startInterval &&
+      featured.interval <= displayPlan.endInterval
+        ? displayPlan.chunkAmount
         : 0n;
     const others = featured.inAmount - mine;
     const rows = [];
@@ -311,16 +342,16 @@ export default function App() {
         amount: formatAmount(others, Number(inDecimals)),
       });
     return rows;
-  }, [featured, plan, phase, inDecimals]);
+  }, [featured, displayPlan, phase, inDecimals]);
 
   const timeline = useMemo(() => {
-    if (!status) return [];
+    if (!displayStatus) return [];
     // Anchor the window on the most recent activity, not the current interval,
     // so a long quiet stretch doesn't render as an empty chart.
     const latestFilled = filledBatches.length > 0 ? Number(filledBatches[0].interval) : null;
-    const last = latestFilled ?? Number(status.nextInterval) - 1;
+    const last = latestFilled ?? Number(displayStatus.nextInterval) - 1;
     const first = Math.max(0, last - (TIMELINE_SPAN - 1));
-    const byInterval = new Map(batches.map((batch) => [Number(batch.interval), batch]));
+    const byInterval = new Map(displayBatches.map((batch) => [Number(batch.interval), batch]));
     const cells = [];
     for (let interval = first; interval <= Math.max(first, last); interval++) {
       const batch = byInterval.get(interval);
@@ -335,17 +366,17 @@ export default function App() {
         : 2,
       empty: cell.amount === 0n,
     }));
-  }, [batches, status, inDecimals, filledBatches]);
+  }, [displayBatches, displayStatus, inDecimals, filledBatches]);
 
   return (
     <div className="page">
       <header className="header rise">
         <div className="header-left">
           <div className="title-row">
-            <h1 className="title serif">Iceberg</h1>
+            <h1 className="title display">Iceberg</h1>
             <span className="badge">STRK20 private sprint</span>
           </div>
-          <p className="thesis serif">
+          <p className="thesis">
             Private scheduled trading on Starknet. The chain records{" "}
             <em>one anonymous swap per interval</em> — only you can decode{" "}
             <em>your own schedule</em> out of it.
@@ -366,26 +397,65 @@ export default function App() {
 
       <div className="metrics rise rise-1">
         <div className="metric">
-          <span className="lbl">current interval</span>
-          <span className="metric-value">{status ? String(status.currentInterval) : "—"}</span>
+          <span className="lbl">interval now</span>
+          <span className="metric-value">#{String(displayStatus.currentInterval)}</span>
         </div>
         <div className="metric">
-          <span className="lbl">next to execute</span>
-          <span className="metric-value">{status ? String(status.nextInterval) : "—"}</span>
+          <span className="lbl">keeper's next batch</span>
+          <span className="metric-value">#{String(displayStatus.nextInterval)}</span>
         </div>
         <div className="metric">
           <span className="lbl">batch size per interval</span>
           <span className="metric-value">
-            {status ? formatAmount(status.chunkRate, Number(inDecimals)) : "—"}
+            {formatAmount(displayStatus.chunkRate, Number(inDecimals))}
             <span className="metric-unit">{inSymbol}</span>
           </span>
         </div>
         <div className="metric">
           <span className="lbl">rpc</span>
           <span className="metric-rpc">
-            <span className="pulse" />
-            {address ? "polling · 10s" : "no contract set"}
+            {usingDemo ? (
+              <span className="demo-tag">demo data</span>
+            ) : (
+              <>
+                <span className="pulse" />
+                polling · 10s
+              </>
+            )}
           </span>
+        </div>
+      </div>
+
+      <div className="steps rise rise-1">
+        <div className="step">
+          <div className="step-head">
+            <span className="step-num">01</span>
+            <span className="step-title">Deposit once</span>
+          </div>
+          <p className="step-desc">
+            One signature escrows every future chunk in the contract up front. Nothing left to
+            authorize later.
+          </p>
+        </div>
+        <div className="step">
+          <div className="step-head">
+            <span className="step-num">02</span>
+            <span className="step-title">Keeper executes automatically</span>
+          </div>
+          <p className="step-desc">
+            Each interval, a keeper sums every active plan's chunk and swaps once for the group.
+            No further signature, ever.
+          </p>
+        </div>
+        <div className="step">
+          <div className="step-head">
+            <span className="step-num">03</span>
+            <span className="step-title">Claim whenever</span>
+          </div>
+          <p className="step-desc">
+            A second, separate signature — anytime, partial or full — pays out what's accrued. The
+            plan keeps running either way.
+          </p>
         </div>
       </div>
 
@@ -394,12 +464,16 @@ export default function App() {
       <section className="section rise rise-2">
         <div className="section-head">
           <div className="section-head-left">
-            <span className="lbl lbl-wide">above the waterline</span>
-            <h2 className="serif">What the chain sees</h2>
+            <div className="field-row" style={{ marginTop: 0, alignItems: "center" }}>
+              <span className="lbl lbl-wide">above the waterline</span>
+              {usingDemo && <span className="demo-tag">demo data</span>}
+            </div>
+            <h2>What the chain sees</h2>
           </div>
           <p className="section-note">
-            The complete public record. Aggregate swaps only: no addresses, no owners, no schedules,
-            no way to tell one plan from three.
+            {usingDemo
+              ? "Real batches captured from a local devnet run, shown so the page never renders empty. Point Settings at a live RPC and contract to replace this with a live feed."
+              : "The complete public record. Aggregate swaps only: no addresses, no owners, no schedules, no way to tell one plan from three."}
           </p>
         </div>
 
@@ -465,7 +539,7 @@ export default function App() {
 
       {featured && (
         <section className="section-tight rise rise-3">
-          <div className="card assembly">
+          <div className="card assembly" ref={assemblyRef}>
             <div className="assembly-head">
               <span className="lbl lbl-wide">
                 batch assembly · interval #{String(featured.interval)}
@@ -503,7 +577,7 @@ export default function App() {
                 <div
                   className="agg-card"
                   style={{
-                    border: `1px solid ${mixStage >= 2 ? "var(--ink)" : "var(--border-soft)"}`,
+                    border: `1px solid ${mixStage >= 2 ? "var(--accent)" : "var(--border)"}`,
                     opacity: mixStage >= 2 ? 1 : 0.2,
                     transform: `scale(${mixStage >= 2 ? 1 : 0.97})`,
                   }}
@@ -545,7 +619,7 @@ export default function App() {
         <div className="section-head">
           <div className="section-head-left">
             <span className="lbl lbl-wide">below the waterline</span>
-            <h2 className="serif">What only you see</h2>
+            <h2>What only you see</h2>
           </div>
           <p className="section-note">
             Your plan secret never leaves this browser. On-chain it exists only as a Poseidon
@@ -563,11 +637,14 @@ export default function App() {
                 onChange={(event) => setSecret(event.target.value)}
                 placeholder="text or 0x felt"
               />
-              <button className="btn-accent" disabled={!plan?.exists} onClick={runDecode}>
+              <button className="btn-accent" disabled={!displayPlan?.exists} onClick={runDecode}>
                 decode
               </button>
             </div>
             <div className="btn-row">
+              <button className="btn-dark" onClick={() => setSecret(DEMO_SECRET)}>
+                try demo plan
+              </button>
               <button className="btn-dark" onClick={() => setSecret(randomSecret())}>
                 new secret
               </button>
@@ -581,16 +658,27 @@ export default function App() {
                 {commitment ? (phase === "locked" ? `${commitment.slice(0, 22)}…` : commitment) : "—"}
               </span>
             </div>
-            {commitment && !plan?.exists && (
+            {commitment && !displayPlan?.exists && (
               <p className="act-line" style={{ marginTop: "14px" }}>
-                No plan exists for this secret yet.
+                No plan exists for this secret yet. Try{" "}
+                <button
+                  className="btn-dark"
+                  style={{ padding: "3px 8px", display: "inline" }}
+                  onClick={() => setSecret(DEMO_SECRET)}
+                >
+                  demo plan
+                </button>{" "}
+                to see the panel resolve real values.
               </p>
             )}
           </div>
 
           <div className="deep-card plan-card">
             <div className="plan-head">
-              <span className="lbl">your decoded plan</span>
+              <span className="lbl">
+                your decoded plan
+                {usingDemo && secret === DEMO_SECRET && <span className="demo-tag" style={{ marginLeft: 10 }}>demo data</span>}
+              </span>
               <span className={phase === "open" ? "state-badge open" : "state-badge"}>
                 {phase === "open" ? "decoded" : phase === "decoding" ? "decoding" : "locked"}
               </span>
@@ -697,18 +785,25 @@ export default function App() {
 
           <div className="deep-card">
             <span className="lbl">privacy model, stated exactly</span>
-            <div className="privacy-grid">
-              <div className="privacy-col">
-                <span className="lbl hidden-lbl">hidden</span>
+            <div className="privacy-list">
+              <div className="privacy-row">
+                <span className="lbl">hidden</span>
                 <span className="privacy-text">
                   Who created any plan · per-user totals · schedules · claim identity
                 </span>
               </div>
-              <div className="privacy-col">
+              <div className="privacy-row">
                 <span className="lbl">public</span>
                 <span className="privacy-text dim">
                   Individual chunk amounts, unlinked to anyone · each batch's aggregate swap and
                   timing · net flow
+                </span>
+              </div>
+              <div className="privacy-row">
+                <span className="lbl">wallet</span>
+                <span className="privacy-text dim">
+                  Connecting a wallet only enables the buttons below. It never reveals which plan,
+                  if any, is yours — that's decided entirely by whoever holds the secret.
                 </span>
               </div>
             </div>
@@ -718,7 +813,36 @@ export default function App() {
             </p>
           </div>
         </div>
+
+        <div className="deep-card" style={{ marginTop: "24px" }}>
+          <span className="lbl">status, honestly</span>
+          <p className="act-line" style={{ marginTop: "10px" }}>
+            The contracts, keeper, and this interface all work end to end against a local devnet.
+            The real pool flow is code-complete but has not run on mainnet yet — StarkWare has not
+            published the mainnet proving and discovery service URLs. Until then, this deployed
+            page stays read-only wherever it isn't pointed at a local devnet.
+          </p>
+        </div>
       </section>
+
+      <footer className="footer">
+        <p className="footer-note">
+          Iceberg is a hackathon project for the STRK20 Private Sprint. It has not been audited.
+          The private create/claim flow is code-complete but not live on mainnet — see "status,
+          honestly" above.
+        </p>
+        <div className="footer-links">
+          <a href="https://github.com/azeemshaik025/iceberg" target="_blank" rel="noreferrer">
+            repo
+          </a>
+          <a href="https://github.com/azeemshaik025/iceberg/blob/main/SPEC.md" target="_blank" rel="noreferrer">
+            spec
+          </a>
+          <a href="https://strk20.starknet.io/hackathon" target="_blank" rel="noreferrer">
+            STRK20 private sprint
+          </a>
+        </div>
+      </footer>
 
       <div className="drawer" style={{ transform: `translateX(${drawerOpen ? "0" : "102%"})` }}>
         <div className="drawer-head">
